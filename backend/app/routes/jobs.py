@@ -266,3 +266,224 @@ def get_available_jobs():
         "data": jobs_data,
         "count": len(jobs_data)
     }), 200
+    
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
+
+from app import db
+from app.models import Job, Bid
+
+
+
+
+@jobs.route("/jobs/<int:job_id>/complete", methods=["PUT"])
+@jwt_required()
+def mark_job_complete(job_id):
+
+    user_id = int(get_jwt_identity())
+
+    job = Job.query.get(job_id)
+
+    if not job:
+        return jsonify({
+            "error": True,
+            "message": "Job not found"
+        }), 404
+
+    # Job must currently be in progress
+    if job.status != "in_progress":
+        return jsonify({
+            "error": True,
+            "message": "Only jobs that are in progress can be marked as complete"
+        }), 400
+
+    # Find the accepted bid
+    accepted_bid = Bid.query.filter_by(
+        job_id=job.id,
+        status="accepted"
+    ).first()
+
+    if not accepted_bid:
+        return jsonify({
+            "error": True,
+            "message": "No accepted vendor found for this job"
+        }), 400
+
+    # Only the accepted vendor can complete the job
+    if accepted_bid.vendor_id != user_id:
+        return jsonify({
+            "error": True,
+            "message": "Only the accepted vendor can mark this job as complete"
+        }), 403
+
+    job.status = "awaiting_approval"
+
+    db.session.commit()
+
+    return jsonify({
+        "error": False,
+        "message": "Job marked as complete and is awaiting client approval",
+        "data": {
+            "job_id": job.id,
+            "status": job.status
+        }
+    }), 200
+
+
+@jobs.route("/jobs/<int:job_id>/approve", methods=["PUT"])
+@jwt_required()
+def approve_job(job_id):
+
+    user_id = int(get_jwt_identity())
+
+    job = Job.query.get(job_id)
+
+    if not job:
+        return jsonify({
+            "error": True,
+            "message": "Job not found"
+        }), 404
+
+    # Only awaiting-approval jobs can be approved
+    if job.status != "awaiting_approval":
+        return jsonify({
+            "error": True,
+            "message": "This job is not awaiting approval"
+        }), 400
+
+    # Only the client who created the job can approve it
+    if job.client_id != user_id:
+        return jsonify({
+            "error": True,
+            "message": "Only the client who created this job can approve it"
+        }), 403
+
+    job.status = "completed"
+
+    db.session.commit()
+
+    return jsonify({
+        "error": False,
+        "message": "Job approved successfully",
+        "data": {
+            "job_id": job.id,
+            "status": job.status
+        }
+    }), 200
+    
+@jobs.route("/jobs/my-vendor-jobs", methods=["GET"])
+@jwt_required()
+def get_my_vendor_jobs():
+
+    user_id = int(get_jwt_identity())
+
+    # Find all jobs where this vendor has an accepted bid
+    accepted_bids = Bid.query.filter_by(
+        vendor_id=user_id,
+        status="accepted"
+    ).all()
+
+    jobs_data = []
+
+    for bid in accepted_bids:
+
+        job = Job.query.get(bid.job_id)
+
+        if not job:
+            continue
+
+        jobs_data.append({
+            "id": job.id,
+            "title": job.title,
+            "description": job.description,
+            "scope": job.scope,
+            "duration": job.duration,
+            "experience_level": job.experience_level,
+            "budget": float(job.budget),
+            "status": job.status,
+            "category": {
+                "id": job.category.id,
+                "name": job.category.name
+            },
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat()
+        })
+
+    return jsonify({
+        "error": False,
+        "data": jobs_data
+    }), 200
+    
+@jobs.route("/jobs/my-jobs/active", methods=["GET"])
+@jwt_required()
+def get_my_active_jobs():
+
+    user_id = int(get_jwt_identity())
+
+    jobs = Job.query.filter(
+        Job.client_id == user_id,
+        Job.status.in_(["in_progress", "awaiting_approval"])
+    ).order_by(Job.created_at.desc()).all()
+
+    jobs_data = []
+
+    for job in jobs:
+
+        jobs_data.append({
+            "id": job.id,
+            "title": job.title,
+            "description": job.description,
+            "scope": job.scope,
+            "duration": job.duration,
+            "experience_level": job.experience_level,
+            "budget": float(job.budget),
+            "status": job.status,
+            "category": {
+                "id": job.category.id,
+                "name": job.category.name
+            },
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat()
+        })
+
+    return jsonify({
+        "error": False,
+        "data": jobs_data
+    }), 200 
+    
+@jobs.route("/jobs/my-jobs/completed", methods=["GET"])
+@jwt_required()
+def get_my_completed_jobs():
+
+    user_id = int(get_jwt_identity())
+
+    jobs = Job.query.filter(
+        Job.client_id == user_id,
+        Job.status == "completed"
+    ).order_by(Job.created_at.desc()).all()
+
+    jobs_data = []
+
+    for job in jobs:
+
+        jobs_data.append({
+            "id": job.id,
+            "title": job.title,
+            "description": job.description,
+            "scope": job.scope,
+            "duration": job.duration,
+            "experience_level": job.experience_level,
+            "budget": float(job.budget),
+            "status": job.status,
+            "category": {
+                "id": job.category.id,
+                "name": job.category.name
+            },
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat()
+        })
+
+    return jsonify({
+        "error": False,
+        "data": jobs_data
+    }), 200
