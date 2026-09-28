@@ -37,6 +37,7 @@ def create_app():
     from app.routes.vendors import vendors
     from app.routes.bids import bids
     from app.routes.chat import chat
+    from app.routes.admin import admin
 
     app.register_blueprint(auth, url_prefix="/api/auth")
     app.register_blueprint(categories, url_prefix="/api")
@@ -44,6 +45,7 @@ def create_app():
     app.register_blueprint(vendors, url_prefix="/api")
     app.register_blueprint(bids, url_prefix="/api")
     app.register_blueprint(chat, url_prefix="/api")
+    app.register_blueprint(admin, url_prefix="/api/admin")
     
 
     with app.app_context():
