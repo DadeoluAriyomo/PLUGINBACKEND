@@ -33,11 +33,11 @@ def create_conversation(job_id):
             "data": None
         }), 404
 
-    # Job must be in progress
-    if job.status != "in_progress":
+    # Chat history is available for jobs that have started
+    if job.status not in ["in_progress", "awaiting_approval", "completed"]:
         return jsonify({
             "error": True,
-            "message": "Chat is only available for jobs in progress",
+            "message": "Chat is not available for this job",
             "data": None
         }), 400
 
@@ -136,6 +136,14 @@ def send_message(conversation_id):
             "message": "You are not part of this conversation",
             "data": None
         }), 403
+
+    # Messages can only be sent while the job is in progress
+    if conversation.job.status != "in_progress":
+        return jsonify({
+            "error": True,
+            "message": "Messaging is disabled for this job",
+            "data": None
+        }), 400
 
     data = request.get_json()
 
@@ -236,5 +244,64 @@ def get_messages(conversation_id):
     return jsonify({
         "error": False,
         "message": "Messages retrieved successfully",
+        "data": result
+    }), 200
+@chat.route("/conversations", methods=["GET"])
+@jwt_required()
+def get_conversations():
+
+    user_id = int(get_jwt_identity())
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({
+            "error": True,
+            "message": "User not found",
+            "data": None
+        }), 404
+
+    # Get conversations where the user is either
+    # the client or the vendor
+    conversations = Conversation.query.filter(
+        (Conversation.client_id == user.id) |
+        (Conversation.vendor_id == user.id)
+    ).order_by(
+        Conversation.updated_at.desc()
+    ).all()
+
+    result = []
+
+    for conversation in conversations:
+
+        # Determine who the other person is
+        if conversation.client_id == user.id:
+            other_user = conversation.vendor
+        else:
+            other_user = conversation.client
+
+        result.append({
+            "id": conversation.id,
+            "job_id": conversation.job_id,
+
+            "job": {
+                "id": conversation.job.id,
+                "title": conversation.job.title
+            },
+
+            "other_user": {
+                "id": other_user.id,
+                "first_name": other_user.first_name,
+                "last_name": other_user.last_name,
+                "email": other_user.email
+            },
+
+            "created_at": conversation.created_at.isoformat(),
+            "updated_at": conversation.updated_at.isoformat()
+        })
+
+    return jsonify({
+        "error": False,
+        "message": "Conversations retrieved successfully",
         "data": result
     }), 200
